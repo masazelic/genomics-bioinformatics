@@ -1,0 +1,202 @@
+---
+title: "6. Graded problem class - solution"
+author: 'Marija Zelic, SCIPER: 371272'
+date: "2024-03-25"
+format:
+  html:
+    embed-resources: true
+  pdf:
+    papersize: a4
+    fig-width: 6
+    fig-height: 4
+format-links: false
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Exercise 1 - Simulating experimental evolution with serial passage  
+
+1. In the serial passage experiment, growth phase is modeled as deterministic exponential growth with no death, starting from $K$. If a starting mutant fraction (before growth) is $x$, mutant fraction after growth $x'$ can be written as:
+
+$$ x' = \frac{xe^{st}}{1 + x(e^{st}-1)} = \frac{(1 + \sigma)x}{1 + \sigma x}$$  
+
+if we replace $\sigma = e^{st} - 1$, which is equivalent to the Wright-Fisher model with $\sigma$ instead of $s$.
+
+```{r calc, echo=TRUE}
+s = 0.01 # fitness of the mutant 1+s
+t = 10 # time
+K = 1000 # initial size of the population
+x = 0.1 # mutant fraction before the growth
+
+sigma = exp(s*t) - 1
+x_prime = (1+sigma)*x/(1+sigma*x)
+x_prime
+
+s1 = 0.2
+sigma2 = exp(s1*t) - 1
+x_prime1 = (1+sigma2)*x/(1+sigma2*x)
+x_prime1
+```
+
+For the $s = 0.01$, we have that fraction of the mutants after growth is $x'=0.109$ which is negligible increase compared to the fraction of mutants before the growth. Therefore, we can say that this process evolves like there is no natural selection. On the other hand, for the $s = 0.2$, fraction of the mutants after the growth is $x'= 0.451$, which is considerable increase compared to the fraction of the mutants before the growth. This is expected, since mutants have larger relative fitness advantage. 
+
+2. In the dilution step, we have $k$ mutants that are sampled to form the next bottleneck. Since, we consider constant population size $K$, minimal value that $k$ can take is 0 and maximal value is $K$. It is known that $k$ follows binomial distribution (binomial sampling), which is given by the formula: 
+
+$$ P(k) = {{K}\choose{k}}(x')^{k}(1-x')^{K-k}$$  
+
+where $K$ is constant population size, $k$ is number of the mutants sampled for the next bottleneck and $x'$ mutant fraction after growth in the growth phase. 
+
+3. Wright-Fisher model is similar to the bottleneck phase of the serial passage model, since Wright-Fisher model considers finite and constant population size from one generation to another, which is the same case in transition from one bottleneck to another (in the beginning of the population in the new medium, there is always the same culture size). Another similarity is that for the upcoming generation/bottleneck both use binomial sampling with probability of success (selecting a mutant) in the following form: 
+
+$$ x' = \frac{(1 + \sigma)x}{1 + \sigma x}$$  
+
+In the Wright-Fisher model $\sigma = s$, where $s$ encodes fitness of the mutants and in the serial passage model $\sigma = e^{st} - 1$, which accounts for the difference between these two models, which is that in serial passage model there is first phase of exponential growth. In the exponential growth phase there is deterministic growth with no deaths. Mutation fixation probability with diffusion approximation gives the same result as in the Wright-Fisher model, which is another similarity. The serial passage model is regularly used as an experimental protocol, especially in virology, where virus culture is grown in one environment (medium) and the portion of the virus population is removed and put into a new environment, so that final population is studied and compared to the initial one. On the other hand, Wright-Fisher model is usually used as mathematical model to describe genetic drift - the change in frequency of the existing gene variant (allele) in a population due to the random change. 
+
+4. For sampling number $k$ of mutants that exist in the next bottleneck we can use **rbinom** function that implements binomial sampling. For the given parameters, binomial sampling would look like this:   
+
+```{r binomialSampling, fig.align = 'center', echo=TRUE}
+n = 1000 # number of samples to draw
+set.seed(42)
+mutants = rbinom(n, K, prob=x_prime)
+
+# Mean value
+mean_value = mean(mutants)
+mean_value
+
+# Standard deviation value
+sd_value = sd(mutants)
+sd_value
+
+par(mfrow=c(1,1))
+hist(mutants, main="Histogram of the number of mutants in the next bottleneck", xlab="# of mutants")
+```
+5. Simulate serial passage model. The same diffusion approximation for the mutation fixation probability (starting from the one mutant) can be followed in the serial passage model, as it was in Wright-Fisher model. As it can be observed from the plot of $150$ bottlenecks for $100$ different repetitions, most of the trajectories end in the distinction of the mutant, while some result with the fixation of the mutant, with noisy, but certainly ascending trajectories. For the selected parameters: $s = 0.01$ and $K = 1000$, we have a situation where $s << 1$ and $s >> \frac{1}{N}$, so by following the approximation we can expect that the probability of the fixation is $2s = 2\sigma \approx 0.21$, since $\sigma$ is equivalent of the $s$ in the Wright-Fisher model. This would imply that out of 100 different realizations of the model, 21 would end in the fixation which is approximately the case. 
+
+```{r simSerial, fig.align = 'center', echo=TRUE}
+n_mutants = 1 # number of the mutants in the initial bottleneck
+x = 1/K # fraction of the mutants before the growth phase
+n_btln = 150 # number of bottlenecks
+n_rep = 100 # number of repetitions
+
+mutant_fraction = matrix(nrow=n_btln, ncol=n_rep)
+for (i in 1:n_rep) {
+  mutant_fraction[1, i] = x
+  for (j in 2:n_btln) {
+    # Growth phase - recalculating mutant fraction
+    sigma = exp(s*t) - 1
+    x_prime = (1+sigma)*mutant_fraction[j-1,i]/(1+sigma*mutant_fraction[j-1,i])
+    # Binomial sampling according to recalculated mutant fraction
+    mutant_fraction[j,i] = rbinom(1, K, prob=x_prime) / K
+  }
+}
+
+matplot(1:n_btln, mutant_fraction, pch=20, type="l", lty="solid", main='Serial passage model', xlab='Bottleneck', ylab='Mutant fraction')
+
+```
+## Exercise 2 - Mutations in the flu virus
+
+1. By examining the data, we can see that there is in total $841$ sequences, all of which are of the same length $1694$.
+
+```{r loading, echo=TRUE}
+library("seqinr")
+library("DescTools")
+library("stringr")
+sequences = read.fasta("/Users/marijazelic/Downloads/ExercisesWeek6_data_and_source/HA_sequences.fasta", whole.header=TRUE)
+n_seq = length(sequences) # number of sequences in the list
+n_seq
+len_seq = length(sequences[[1]]) # length of the sequences
+len_seq
+```
+
+2. We obtained Hamming distances by using the **StrDist** function from **DescTools** package. It is necessary to note that we had to divide the given result by the length of the sequence to make the value in range between $0$ and $1$. For the Jukes-Cantor evolutionary distance between two sequences, we can use the fact that it can be estimated from the Hamming distance by the given formula:
+
+$$ d_{JC} = -\frac{3}{4}log(1-\frac{4}{3}d_H)$$ 
+
+
+
+```{r hamming, fig.align='center', echo=TRUE}
+first_seq = sequences[[1]]
+hamming_distances = numeric(n_seq-1)
+years = numeric(n_seq-1)
+
+for (i in 2:n_seq) {
+  hamming_distances[i-1] = StrDist(first_seq, sequences[[i]], method="hamming") / len_seq
+  seq_name = names(sequences)[[i]]
+  years[i-1] = as.integer(str_sub(seq_name, -4, -1))
+}
+jukes_cantor_distance = -0.75*log(1-4/3*hamming_distances)
+
+par(mfrow=c(1,1))
+plot(years, hamming_distances, col='red', pch='*', ylab='distances', main='Hamming and Jukes-Cantor distances over years')
+points(years, jukes_cantor_distance, col='black', pch='+')
+legend("topleft", legend=c("hamming", "jukes-cantor"), col=c("red", "black"), pch=c("*", "+"), ncol=1, xpd=TRUE)
+
+# Mean value of Hamming distances
+mean_value = mean(hamming_distances)
+mean_value
+
+# Max value of Hamming distances
+max_value = max(hamming_distances)
+max_value
+```
+If we take a closer look into the values of distance, they are very similar, with Jukes-Cantor distance over Hamming's distance discrepancy increasing over the years. This can be explained by the fact that Jukes-Cantor distance take into account multiple substitutions at the same site. Fraction of the HA gene that has changed due to mutations over 37 years can be observed by looking at the values of Hamming's distance of the sample from the final year, which is approximately $0.13$, i.e. $13\%$ of the gene has changed. In average this corresponds to the approximately $0.15$ mutations per site, which we can conclude from the plot of Jukes-Cantor distance, since it takes into account multiple mutations. 
+
+3. For UPGMA method for constructing phylogenetic trees to be able to find correct topology, it needs to satisfy two main assumptions: all leaves (sequences) need to have same distance from the root and all species need to evolve at the same rate, i.e. they need to have the same molecular clock. As we can observe from the plot of Hamming/Jukes-Cantor distances over the years there is a almost linear correlation between years and distances, which implies constant rate (same molecular clock), meaning that second assumption holds. However, the plot also suggests that distance increases as we go through time, so the first assumption does not hold. Therefore, UPGMA method for constructing phylogenetic trees would not be able to give reasonable results for these sequences. 
+
+4. If we make comparison between mean and maximum value of pair-wise distances from the same year combined (for all years) and their counterparts in the question 2 (distances from first sequence to the remaining ones), we can observe large discrepancies in the values, which are expected, since maximum value of the distances over 37 years must be larger than the distances in a single year. But, what is also interesting to observe is that for maximum distance of $0.04$ in question 4 (which is distance in a single year) to be achieved from the root (first sequence) to the other ones (in question 2), takes more or less 10 years. This implies that in that specific year(s) when $0.04$ value was achieved, changes were quite drastic. 
+
+```{r q4, fig.align='center', echo=TRUE}
+years_all = numeric(n_seq)
+
+for (i in 1:n_seq) {
+  seq_name = names(sequences)[[i]]
+  years_all[i] = as.integer(str_sub(seq_name, -4, -1))
+}
+
+years_all = unique(years_all)
+n_years_all = length(years_all)
+all_distances = vector("numeric", length=0)
+
+
+for (i in 1:n_years_all) {
+  curr_year = toString(years_all[i])
+  all_sequences_curr_year = grep(curr_year, names(sequences))
+  n_seq_year = length(all_sequences_curr_year)
+  
+  if (n_seq_year > 1) {
+    for (j in 1:(n_seq_year-1)) {
+      for (k in (j+1):n_seq_year) {
+        distances = StrDist(sequences[[all_sequences_curr_year[j]]], sequences[[all_sequences_curr_year[k]]], method="hamming") / len_seq
+        all_distances = c(all_distances, distances)
+      }
+    }
+  }
+}
+
+par(mfrow=c(1,1))
+hist(all_distances, main="Histogram of all distances between sequences in one year", xlab="distance")
+
+# Mean value of all distances
+mean_value = mean(all_distances)
+mean_value
+
+# Max value of all distances
+max_value = max(all_distances)
+max_value
+```
+
+5. To approximate how long it would take for sequences to accumulate a number of differences corresponding to the average distance between sequences from the same year, we will follow next approach. Using the result from the previous question, we can see that the average distance between sequences from the same year is approximately $0.008$. As we discussed before, from the plot of Hamming's distances over the years, it can be observed that they follow somewhat linear trend for which we can find the slope by modeling the data using the least-squares approach. Finally, since we have average distance and the slope, which represents the distance-years ratio, we can find the time that it takes to accumulate same amount of difference by dividing the average distance with the slope, which gives us value of approximately $2.6$ years. 
+
+
+```{r pairs, echo=TRUE}
+
+model = lm(hamming_distances ~ years)
+coef = coefficients(model)
+slope = coef[2]
+years_take = mean_value / slope
+
+# How long it takes
+years_take
+```

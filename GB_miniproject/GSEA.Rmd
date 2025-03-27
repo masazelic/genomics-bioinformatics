@@ -1,0 +1,184 @@
+---
+title: "BIO-463: Final Project - Group 5"
+author: "Marija Zelic, SCIPER: 371272"
+date: "May 2023"
+output:
+  html_document:
+    theme: paper
+#paper readable
+    highlight: monochrome
+    code_folding: hide
+    toc: true
+    toc_depth: 2
+#    toc_float: true
+    number_sections: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(cache =TRUE)
+knitr::opts_chunk$set(fig.width=8, fig.height=6, figure.align = "center") 
+rm(list = ls())
+```
+
+```{r libraries, include=FALSE}
+library(tximport)
+library(GenomicFeatures)
+library(DESeq2)
+library(org.Hs.eg.db)
+library(RColorBrewer)
+library(ggrepel)
+library(ggplot2)
+library(readxl)
+```
+
+```{r VadadCntrl, include=FALSE}
+
+# Load Vadadustat data
+data = read.delim("/Users/marijazelic/Downloads/FinalProject_GB/HypoxCntrl/gsea_report_for_Hypoxia_1715943579957.tsv", sep="\t")
+
+# Load Control data
+data_cnt = read.delim("/Users/marijazelic/Downloads/FinalProject_GB/HypoxCntrl/gsea_report_for_Control_1715943579957.tsv", sep="\t")
+
+data = rbind(data, data_cnt)
+gene_set = strsplit(data$NAME, split = "_")
+gene_set = lapply(gene_set, function(x) x[-1])
+gene_set = as.character(lapply(gene_set, function (x) paste(x, collapse = " ")))
+data$NAME = gene_set
+data$NAME <- factor(data$NAME, levels = rev(data$NAME))
+data$fdr_sig = ifelse(data$FDR.q.val < 0.25, "sig", "non-sig")
+```
+
+```{r plots, include=TRUE}
+bar = ggplot(data=data, aes(x=NAME, y=as.numeric(NES), label=NES)) +
+  geom_bar(stat = "identity", aes(fill=fdr_sig)) +
+  coord_flip() + 
+  ylim(-2, 3) +
+  labs(title = "Hallmark of 2% hypoxia preconditioning", y = "Normalized Encrichment Score (NES)", x = "Gene Set") +
+  scale_fill_manual("legend", values=c("sig"="red", "non-sig"="gray"), labels=c("sig"="FDR q-values < 0.25", "non-sig"="FDR q-values > 0.25"))
+bar
+ggsave('~/saved_image.png', width = 8, height = 6)
+```
+
+```{r godata, include=TRUE}
+
+data_gbo = read.delim("/Users/marijazelic/Downloads/gsea_report_for_Hypoxia_1715961825024.tsv", sep="\t")
+
+# We first need to filter all the rows that are not GOBP
+bo = strsplit(data_gbo$NAME, split="_")
+bo = lapply(bo, function(x) x[1])
+bo = as.numeric(lapply(bo, function(x) which(x == 'GOBP')))
+bo = which(bo == 1)
+data_gbo = data_gbo[bo, ]
+
+# We now need to modify NAME (similar to previous)
+bo = strsplit(data_gbo$NAME, split="_")
+bo = lapply(bo, function(x) x[-1])
+bo = as.character(lapply(bo, function (x) paste(x, collapse = " ")))
+data_gbo$NAME = bo
+
+# We need to filter out all entries that have FDR > 0.25
+data_gbo = data_gbo[which(data_gbo$FDR.q.val < 0.25), ]
+data_gbo$NAME <- factor(data_gbo$NAME, levels = rev(data_gbo$NAME))
+```
+
+```{r goplots, include=TRUE, fig.width=8, fig.height=6}
+bar_gob = ggplot(data=data_gbo, aes(x=NAME, y=as.numeric(NES))) +
+  geom_bar(stat="identity", width=0.5) + 
+  geom_text(aes(label=SIZE), hjust=1, size=3.5) +
+  coord_flip() + 
+  ylim(-2, 3) +
+  labs(title = "GO Biological Processes", y = "Normalized Encrichment Score (NES)", x = "Gene Set")
+  
+bar_gob
+ggsave('~/saved_image.png', width = 8, height = 6)
+```
+
+```{r dataDEGs, include=TRUE}
+# Here I put plots, when I get count matrix - meanwhile I use tables they provided in Supplementary materials
+table1 = read_excel("/Users/marijazelic/Downloads/Supplementary files/Supplementary Table 1.xlsx") # hypoxia vs control
+new_header = as.character(table1[3, ])
+table1 = table1[c(-1, -2), ]
+colnames(table1) = as.factor(new_header)
+table1 = table1[c(-1), ]
+
+table2 = read_excel("/Users/marijazelic/Downloads/Supplementary files/Supplementary Table 2.xlsx") # vadadustat vs control
+new_header = as.character(table2[3, ])
+table2 = table2[c(-1, -2), ]
+colnames(table2) = as.factor(new_header)
+table2 = table2[c(-1), ]
+
+table3 = read_excel("/Users/marijazelic/Downloads/Supplementary files/Supplementary Table 3.xlsx") # vadadustat vs hypoxia
+new_header = as.character(table3[3, ])
+table3 = table3[c(-1, -2), ]
+colnames(table3) = as.factor(new_header)
+table3 = table3[c(-1), ]
+```
+
+```{r vp1, include=TRUE}
+# In these tables there are insignificant genes missing, they probably removed them from these tables
+table1$diffexpressed[table1$padj < 0.05] = "down"
+table1$diffexpressed[table1$padj > 0.05] = "up"
+
+table2$diffexpressed[table2$padj < 0.05] = "down"
+table2$diffexpressed[table2$padj > 0.05] = "up"
+
+table3$diffexpressed[table3$padj < 0.05] = "down"
+table3$diffexpressed[table3$padj > 0.05] = "up"
+```
+
+```{r dataDEGsvp1, include=TRUE}
+vp1 = ggplot(data=table1, aes(x=as.numeric(log2FoldChange), y=-log10(as.numeric(padj)), col=diffexpressed, label=hgnc_symbol)) +
+  geom_point() +
+  geom_text_repel() +
+  labs(title="Hypoxia Vs. Control", y="-log10(adjP-value)", x="Log2FoldChange")
+vp1
+```
+
+```{r dataDEGsvp2, include=TRUE}
+vp2 = ggplot(data=table2, aes(x=as.numeric(log2FoldChange), y=-log10(as.numeric(padj)), col=diffexpressed, label=hgnc_symbol)) +
+  geom_point() + 
+  xlim(-20, 20) + 
+  geom_text_repel() +
+  labs(title="Vadadustat Vs. Control", y="-log10(adjP-value)", x="Log2FoldChange")
+vp2
+```
+
+```{r dataDEGsvp3, include=TRUE}
+vp3 = ggplot(data=table3, aes(x=as.numeric(log2FoldChange), y=-log10(as.numeric(padj)), col=diffexpressed, label=hgnc_symbol)) +
+  geom_point() + 
+  geom_text_repel() +
+  labs(title="Vadadustat Vs. Hypoxia", y="-log10(adjP-value)", x="Log2FoldChange")
+vp3
+```
+
+```{r updown, include=TRUE}
+table1$diffexpressed[table1$log2FoldChange < 0.0] = "Downregulated"
+table1$diffexpressed[table1$log2FoldChange > 0.0] = "Upregulated"
+count_table1 = table(table1$diffexpressed)
+count_table1 = as.data.frame(count_table1)
+
+table2$diffexpressed[table2$log2FoldChange < 0.0] = "Downregulated"
+table2$diffexpressed[table2$log2FoldChange > 0.0] = "Upregulated"
+count_table2 = table(table2$diffexpressed)
+count_table2 = as.data.frame(count_table2)
+
+table3$diffexpressed[table3$log2FoldChange < 0.0] = "Downregulated"
+table3$diffexpressed[table3$log2FoldChange > 0.0] = "Upregulated"
+count_table3 = table(table3$diffexpressed)
+count_table3 = as.data.frame(count_table3)
+
+for_barplot = rbind(count_table1, count_table2, count_table3)
+for_barplot$DEG = rep(c("Hypoxia Vs. Control", "Vadadustat Vs. Control", "Vadadustat Vs. Hypoxia"), each=2)
+colnames(for_barplot) = as.factor(c("Genes", "Counts", "DEG"))
+```
+
+```{r updownplot, include=TRUE}
+updownplot = ggplot(data=for_barplot, aes(x=DEG, y=Counts, fill=Genes)) +
+  geom_bar(stat="identity", position=position_dodge()) +
+  geom_text(aes(label=Counts), vjust=0, position=position_dodge(0.9), size=3.5) +
+  scale_fill_manual(values=c("red", "gray")) +
+  labs(title="Differentially Expressed Genes (DEGs)")
+updownplot
+```
